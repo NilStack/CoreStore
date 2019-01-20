@@ -3,38 +3,40 @@
 //  CoreStoreDemo
 //
 //  Created by John Rommel Estropia on 2015/05/24.
-//  Copyright (c) 2015 John Rommel Estropia. All rights reserved.
+//  Copyright © 2018 John Rommel Estropia. All rights reserved.
 //
 
 import UIKit
+import Contacts
 import CoreLocation
 import MapKit
 import AddressBookUI
 import CoreStore
-import GCDKit
 
 
 private struct Static {
     
     static let placeController: ObjectMonitor<Place> = {
         
-        try! CoreStore.addSQLiteStoreAndWait(
-            fileName: "PlaceDemo.sqlite",
-            configuration: "TransactionsDemo",
-            resetStoreOnModelMismatch: true
+        try! CoreStore.addStorageAndWait(
+            SQLiteStore(
+                fileName: "PlaceDemo.sqlite",
+                configuration: "TransactionsDemo",
+                localStorageOptions: .recreateStoreOnModelMismatch
+            )
         )
         
-        var place = CoreStore.fetchOne(From(Place))
+        var place = CoreStore.fetchOne(From<Place>())
         if place == nil {
             
-            CoreStore.beginSynchronous { (transaction) -> Void in
-                
-                let place = transaction.create(Into(Place))
-                place.setInitialValues()
-                
-                transaction.commit()
-            }
-            place = CoreStore.fetchOne(From(Place))
+            _ = try? CoreStore.perform(
+                synchronous: { (transaction) in
+                    
+                    let place = transaction.create(Into<Place>())
+                    place.setInitialValues()
+                }
+            )
+            place = CoreStore.fetchOne(From<Place>())
         }
         
         return CoreStore.monitorObject(place!)
@@ -60,39 +62,42 @@ class TransactionsDemoViewController: UIViewController, MKMapViewDelegate, Objec
         
         super.viewDidLoad()
         
-        let longPressGesture = UILongPressGestureRecognizer(target: self, action: "longPressGestureRecognized:")
+        let longPressGesture = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(self.longPressGestureRecognized(_:))
+        )
         self.mapView?.addGestureRecognizer(longPressGesture)
         
         Static.placeController.addObserver(self)
         
         self.navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .Refresh,
+            barButtonSystemItem: .refresh,
             target: self,
-            action: "refreshButtonTapped:"
+            action: #selector(self.refreshButtonTapped(_:))
         )
     }
     
-    override func viewDidAppear(animated: Bool) {
+    override func viewDidAppear(_ animated: Bool) {
         
         super.viewDidAppear(animated)
         
         let alert = UIAlertController(
             title: "Transactions Demo",
             message: "This demo shows how to use the 3 types of transactions to save updates: synchronous, asynchronous, and unsafe.\n\nTap and hold on the map to change the pin location.",
-            preferredStyle: .Alert
+            preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: "OK", style: .Cancel, handler: nil))
-        self.presentViewController(alert, animated: true, completion: nil)
+        alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: nil))
+        self.present(alert, animated: true, completion: nil)
     }
     
-    override func viewWillAppear(animated: Bool) {
+    override func viewWillAppear(_ animated: Bool) {
         
         super.viewWillAppear(animated)
         
         if let mapView = self.mapView, let place = Static.placeController.object {
             
             mapView.addAnnotation(place)
-            mapView.setCenterCoordinate(place.coordinate, animated: false)
+            mapView.setCenter(place.coordinate, animated: false)
             mapView.selectAnnotation(place, animated: false)
         }
     }
@@ -100,14 +105,14 @@ class TransactionsDemoViewController: UIViewController, MKMapViewDelegate, Objec
     
     // MARK: MKMapViewDelegate
     
-    func mapView(mapView: MKMapView, viewForAnnotation annotation: MKAnnotation) -> MKAnnotationView? {
+    func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
         
         let identifier = "MKAnnotationView"
-        var annotationView: MKPinAnnotationView! = mapView.dequeueReusableAnnotationViewWithIdentifier(identifier) as? MKPinAnnotationView
+        var annotationView: MKPinAnnotationView! = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKPinAnnotationView
         if annotationView == nil {
             
             annotationView = MKPinAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-            annotationView.enabled = true
+            annotationView.isEnabled = true
             annotationView.canShowCallout = true
             annotationView.animatesDrop = true
         }
@@ -122,28 +127,28 @@ class TransactionsDemoViewController: UIViewController, MKMapViewDelegate, Objec
     
     // MARK: ObjectObserver
     
-    func objectMonitor(monitor: ObjectMonitor<Place>, willUpdateObject object: Place) {
+    func objectMonitor(_ monitor: ObjectMonitor<Place>, willUpdateObject object: Place) {
         
         // none
     }
     
-    func objectMonitor(monitor: ObjectMonitor<Place>, didUpdateObject object: Place, changedPersistentKeys: Set<KeyPath>) {
+    func objectMonitor(_ monitor: ObjectMonitor<Place>, didUpdateObject object: Place, changedPersistentKeys: Set<KeyPathString>) {
         
         if let mapView = self.mapView {
             
-            mapView.removeAnnotations(mapView.annotations ?? [])
+            mapView.removeAnnotations(mapView.annotations)
             mapView.addAnnotation(object)
-            mapView.setCenterCoordinate(object.coordinate, animated: true)
+            mapView.setCenter(object.coordinate, animated: true)
             mapView.selectAnnotation(object, animated: true)
             
-            if changedPersistentKeys.contains("latitude") || changedPersistentKeys.contains("longitude") {
+            if changedPersistentKeys.contains(#keyPath(Place.latitude)) || changedPersistentKeys.contains(#keyPath(Place.longitude)) {
                 
-                self.geocodePlace(object)
+                self.geocode(place: object)
             }
         }
     }
     
-    func objectMonitor(monitor: ObjectMonitor<Place>, didDeleteObject object: Place) {
+    func objectMonitor(_ monitor: ObjectMonitor<Place>, didDeleteObject object: Place) {
         
         // none
     }
@@ -155,34 +160,39 @@ class TransactionsDemoViewController: UIViewController, MKMapViewDelegate, Objec
     
     @IBOutlet weak var mapView: MKMapView?
     
-    @IBAction dynamic func longPressGestureRecognized(sender: AnyObject?) {
+    @IBAction dynamic func longPressGestureRecognized(_ sender: AnyObject?) {
         
-        if let mapView = self.mapView, let gesture = sender as? UILongPressGestureRecognizer where gesture.state == .Began {
+        if let mapView = self.mapView,
+            let gesture = sender as? UILongPressGestureRecognizer,
+            gesture.state == .began {
             
-            let coordinate = mapView.convertPoint(
-                gesture.locationInView(mapView),
-                toCoordinateFromView: mapView
+            let coordinate = mapView.convert(
+                gesture.location(in: mapView),
+                toCoordinateFrom: mapView
             )
-            CoreStore.beginAsynchronous { (transaction) -> Void in
+            CoreStore.perform(
+                asynchronous: { (transaction) in
+                    
+                    let place = transaction.edit(Static.placeController.object)
+                    place?.coordinate = coordinate
+                },
+                completion: { _ in }
+            )
+        }
+    }
+    
+    @IBAction dynamic func refreshButtonTapped(_ sender: AnyObject?) {
+        
+        _ = try? CoreStore.perform(
+            synchronous: { (transaction) in
                 
                 let place = transaction.edit(Static.placeController.object)
-                place?.coordinate = coordinate
-                transaction.commit { (_) -> Void in }
+                place?.setInitialValues()
             }
-        }
+        )
     }
     
-    @IBAction dynamic func refreshButtonTapped(sender: AnyObject?) {
-        
-        CoreStore.beginSynchronous { (transaction) -> Void in
-            
-            let place = transaction.edit(Static.placeController.object)
-            place?.setInitialValues()
-            transaction.commit()
-        }
-    }
-    
-    func geocodePlace(place: Place) {
+    func geocode(place: Place) {
         
         let transaction = CoreStore.beginUnsafe()
         
@@ -194,11 +204,23 @@ class TransactionsDemoViewController: UIViewController, MKMapViewDelegate, Objec
             CLLocation(latitude: place.latitude, longitude: place.longitude),
             completionHandler: { [weak self] (placemarks, error) -> Void in
                 
-                if let placemark = placemarks?.first, let addressDictionary = placemark.addressDictionary {
+                if let placemark = placemarks?.first, let dictionary = placemark.addressDictionary {
                     
                     let place = transaction.edit(Static.placeController.object)
                     place?.title = placemark.name
-                    place?.subtitle = ABCreateStringWithAddressDictionary(addressDictionary, true)
+                    place?.subtitle = CNPostalAddressFormatter.string(
+                        from: autoreleasepool {
+                            
+                            let address = CNMutablePostalAddress()
+                            (dictionary["Street"] as? String).flatMap({ address.street = $0 })
+                            (dictionary["State"] as? String).flatMap({ address.state = $0 })
+                            (dictionary["City"] as? String).flatMap({ address.city = $0 })
+                            (dictionary["Country"] as? String).flatMap({ address.country = $0 })
+                            (dictionary["ZIP"] as? String).flatMap({ address.postalCode = $0 })
+                            return address
+                        },
+                        style: .mailingAddress
+                    )
                     transaction.commit { (_) -> Void in }
                 }
                 

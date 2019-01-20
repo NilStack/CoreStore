@@ -3,7 +3,7 @@
 //  CoreStoreDemo
 //
 //  Created by John Rommel Estropia on 2015/06/17.
-//  Copyright (c) 2015 John Rommel Estropia. All rights reserved.
+//  Copyright © 2018 John Rommel Estropia. All rights reserved.
 //
 
 import UIKit
@@ -12,23 +12,23 @@ class QueryingResultsViewController: UITableViewController {
     
     // MARK: Public
     
-    func setValue(value: AnyObject?, title: String) {
+    func set(value: Any?, title: String) {
         
         switch value {
             
-        case .Some(let array as [AnyObject]):
-            self.values = array.map { (item: AnyObject) -> (title: String, detail: String) in
+        case (let array as [Any])?:
+            self.values = array.map { (item: Any) -> (title: String, detail: String) in
                 (
-                    title: item.description,
-                    detail: _stdlib_getDemangledTypeName(item)
+                    title: String(describing: item),
+                    detail: String(reflecting: type(of: item))
                 )
             }
             
-        case .Some(let item):
+        case let item?:
             self.values = [
                 (
-                    title: item.description,
-                    detail: _stdlib_getDemangledTypeName(item)
+                    title: String(describing: item),
+                    detail: String(reflecting: type(of: item))
                 )
             ]
             
@@ -55,14 +55,14 @@ class QueryingResultsViewController: UITableViewController {
     
     // MARK: UITableViewDataSource
     
-    override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         
         return self.values.count
     }
     
-    override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         
-        let cell = tableView.dequeueReusableCellWithIdentifier("UITableViewCell", forIndexPath: indexPath)
+        let cell = tableView.dequeueReusableCell(withIdentifier: "UITableViewCell", for: indexPath)
         
         let value = self.values[indexPath.row]
         
@@ -75,7 +75,7 @@ class QueryingResultsViewController: UITableViewController {
     
     // MARK: UITableViewDelegate
     
-    override func tableView(tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         
         return self.sectionTitle
     }
